@@ -1,0 +1,2 @@
+Consideración 1: Se asume que el precio de venta a la red es constante y de 0.07EUR/kWh, ya que este el régimen de ventas
+que siguen muchas empresas energéticas, como por ejemplo Naturgy.
