@@ -4,7 +4,7 @@
 
 ## Introduction
 
-This Project stands for a end-of-degree Project by Daniel González Domínguez. The purpose of this work is the instantiation of two management strategies for energy communities, one based in linear programming optimization strategies, and the other one based in game-theory based optimization strategies.
+This Project stands for a end-of-degree project by Daniel González Domínguez. The purpose of this work is the instantiation of two management strategies for energy communities, one based in linear programming optimization strategies, and the other one based in game-theory based optimization strategies.
 
 ## Sources
 
