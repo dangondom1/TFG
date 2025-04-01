@@ -21,11 +21,11 @@ M = pyo.ConcreteModel()
 M.pro = pyo.RangeSet(1,5)
 M.tran = pyo.Set(dimen=2, initialize =
                  [(i,j) for i in M.pro for j in M.pro if i!=j])
-M.ts = pyo.RangeSet(1,5)
+M.ts = pyo.RangeSet(1,4)
 M.dt = pyo.Param(initialize=(15/60))
 
-df_gE = pd.read_csv("../Datos/Gen_pw.csv", sep=',').to_numpy()
-df_lE = pd.read_csv("../Datos/Con_pw.csv", sep=',').to_numpy()
+df_gE = pd.read_csv("../Data/Gen_pw.csv", sep=',').to_numpy()
+df_lE = pd.read_csv("../Data/Con_pw.csv", sep=',').to_numpy()
 
 M.gE = pyo.Param(M.pro, M.ts, initialize = lambda 
              model, i, t: df_gE[t-1,i-1]*M.dt,
@@ -34,7 +34,7 @@ M.lE = pyo.Param(M.pro, M.ts, initialize = lambda
              model, i, t: df_lE[t-1,i-1]*M.dt,
              within = pyo.NonNegativeReals)
 
-df_GBP = pd.read_csv("../Datos/precio_compra_red.csv", sep=',').to_numpy()
+df_GBP = pd.read_csv("../Data/precio_compra_red.csv", sep=',').to_numpy()
 
 M.GBP = pyo.Param(M.ts, initialize = lambda
               model, t: df_GBP[t-1],
@@ -85,8 +85,8 @@ M.Z = pyo.Objective(
 #eq10-11: Se aseguran de que los prosumidores solo comercian con un prosumidor.
 
 def eq1_rule(model,i,t):
-    return (M.gE[t,i] + M.GBE[i,t] + sum(M.P2BE[i,j,t] for j in M.pro if j != i) -
-            M.lE[t,i] - M.GSE[i,t] - sum(M.P2SE[i,j,t] for j in M.pro if j != i) ==
+    return (M.gE[i,t] + M.GBE[i,t] + sum(M.P2BE[i,j,t] for j in M.pro if j != i) -
+            M.lE[i,t] - M.GSE[i,t] - sum(M.P2SE[i,j,t] for j in M.pro if j != i) ==
             0.0)
 M.eq1 = pyo.Constraint(M.pro, M.ts, rule=eq1_rule)
 
@@ -163,7 +163,7 @@ if result.solver.status == pyo.SolverStatus.ok:
         
             # Calcular el balance total de energía
             balance_total = (
-                M.gE[t,i] + pyo.value(M.GBE[i,t]) - pyo.value(M.GSE[i,t]) +
+                M.gE[i,t] + pyo.value(M.GBE[i,t]) - pyo.value(M.GSE[i,t]) +
                 compra_p2p - venta_p2p
                 )
         
@@ -171,20 +171,20 @@ if result.solver.status == pyo.SolverStatus.ok:
             filas.append({
                 'Ts': t,
                 'Prosumer': i,
-                'Pgen': M.gE[t,i],
+                'Pgen': M.gE[i,t],
                 'P_buyed_grid': pyo.value(M.GBE[i,t]),
                 'P_selled_grid': pyo.value(M.GSE[i,t]),
                 'P_buyed_P2P': compra_p2p,
                 'P_selled_P2P': venta_p2p,
                 'P_total': balance_total,
-                'P_demand': M.lE[t,i]
+                'P_demand': M.lE[i,t]
                 })
 
     # Crear el DataFrame una sola vez
     df_cons = pd.DataFrame(filas)
 
     # Guardar el DataFrame en un archivo CSV
-    archivo_result = "../Resultados/p1_nobattery.csv"
+    archivo_result = "../Results/p1_nobattery.csv"
     if os.path.exists(archivo_result):
         os.remove(archivo_result)
     df_cons.to_csv(archivo_result, index=False)
