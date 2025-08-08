@@ -2,8 +2,16 @@ import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
 import os
+from pathlib import Path
+
+#Cambio de directorio al ejecutar el código
+BASE_DIR = Path(__file__).resolve().parent
+
+os.chdir(BASE_DIR)
 
 #Inicialización del modelo
+
+print(os.getcwd())
 
 M = pyo.ConcreteModel()
 
@@ -41,9 +49,9 @@ M.GBP = pyo.Param(M.ts, initialize = lambda
               within = pyo.PositiveReals)
 M.GSP = pyo.Param(initialize=0.07,
                   within = pyo.PositiveReals)
-#M.P2P = pyo.Param(M.ts, initialize = lambda
-#               model, t:((M.GBP[t]+M.GSP)/2),
-#               within = pyo.PositiveReals)
+M.P2P = pyo.Param(M.ts, initialize = lambda
+               model, t:((M.GBP[t]+M.GSP)/2),
+               within = pyo.PositiveReals)
 M.maxE = pyo.Param(initialize=10.0)
 
 #Definición de variables
