@@ -3,35 +3,17 @@ import pandas as pd
 import pyomo.environ as pyo
 import os
 from pathlib import Path
+import matplotlib.pyplot as plt # <-- 1. IMPORTACIÓN AÑADIDA
 
 #Cambio de directorio al ejecutar el código
 BASE_DIR = Path(__file__).resolve().parent
-
 os.chdir(BASE_DIR)
 
 #Inicialización del modelo
-
 print(os.getcwd())
-
 M = pyo.ConcreteModel()
 
-#Definición de parámetros
-#pro -> Lista de prosumidores del sistema.
-#tran -> Lista de transacciones posibles. Un prosumidor no puede comerciar consigo mismo.
-#ts -> Lista de ventanas de tiempo.
-#dt -> Duración de la ventana de tiempo.
-#gE -> Energía generada por cada prosumidor en kWh.
-#lE -> Energía consumida por cada prosumidor en kWh.
-#GBP -> Precio de compra a la red (grid), en EUR/kWh. Grid Buy Price.
-#GSP -> Precio de venta a la red (grid), en EUR/kWh. Se asume mayor al GBP. Grid Sell Price.
-#P2P -> Precio de compra/venta al mercado P2P, en EUR/kWh. Se toma la media entre el GSP y el GBP.
-#MaxE -> Máxima energía transportada.
-#MaxEbat -> Energía máxima presente en las baterías.
-#MaxEch -> Energía máxima cargada por una batería.
-#MaxEdch -> Energía máxima descargada por una batería.
-#batcheff -> Eficiencia de carga de las baterías.
-#batdcheff -> Eficiencia de descarga de las baterías.
-
+# --- Definición de parámetros (tu código original) ---
 M.pro = pyo.RangeSet(1,5)
 M.tran = pyo.Set(dimen=2, initialize =
                  [(i,j) for i in M.pro for j in M.pro if i!=j])
@@ -65,21 +47,7 @@ M.maxEdch = pyo.Param(initialize=8.0)
 M.batcheff = pyo.Param(initialize=0.9)
 M.batdcheff = pyo.Param(initialize=0.9)
 
-#Definición de variables
-#GBE -> Energía comprada a la red (grid), en kWh. Grid Buyed Energy.
-#GSE -> Energía vendida a la red (grid), en kWh. Grid Selled Energy.
-#P2BE -> Energía comprada en el mercado P2P, en kWh.
-#P2SE -> Energía vendida en el mercado P2P, en kWh.
-#GB -> Variable binaria que determina si se compra a la red (Grid).
-#GB -> Variable binaria que determina si se vende a la red (Grid).
-#PB -> Variable binaria que determina si se compra al mercado P2P. 
-#PS -> Variable binaria que determina si se vende al mercado P2P. 
-#Ebat -> Energía presente en las baterías.
-#Ech -> Energía cargada en las baterías.
-#Edch -> Energía descargada en las baterías.
-#Bch -> Variable binaria para decidir si una batería se carga.
-#Bdch -> Variable binaria para decidir si una batería se descarga.
-
+# --- Definición de variables (tu código original) ---
 M.GBE = pyo.Var(M.pro, M.ts, domain=pyo.PositiveReals, bounds=(0.0,M.maxE))
 M.GSE = pyo.Var(M.pro, M.ts, domain=pyo.PositiveReals, bounds=(0.0,M.maxE))
 M.P2BE = pyo.Var(M.tran, M.ts, domain=pyo.PositiveReals, bounds=(0.0,M.maxE))
@@ -94,25 +62,13 @@ M.Edch = pyo.Var(M.pro, M.ts, domain=pyo.PositiveReals, bounds=(0.0,M.maxE))
 M.Bch = pyo.Var(M.pro, M.ts, domain=pyo.Binary)
 M.Bdch = pyo.Var(M.pro, M.ts, domain=pyo.Binary)
 
-#Definición de la función objetivo.
-
+# --- Definición de la función objetivo (tu código original) ---
 M.Z = pyo.Objective(
     expr=sum(M.GBE[i,t]*M.GBP[t] for i in M.pro for t in M.ts) - 
     sum(M.GSE[i,t]*M.GSP for i in M.pro for t in M.ts),
     sense=pyo.minimize)
 
-#Definición de las restricciones
-#eq1: Balance de potencia. Lo que se genera debe ser mayor igual a lo que se consume.
-#eq2: Establece que solo se puede comprar de la red (Grid) cuando GB = 1.
-#eq3: Establece que solo se puede vender de la red (Grid) cuando GS = 1.
-#eq4: Establece que solo se puede comprar o vender de la red (Grid).
-#eq5: Establece que solo se puede comprar del mercado p2p cuando PB = 1.
-#eq6: Establece que solo se puede vender mercado p2p cuando PS = 1.
-#eq7: Establece que no se puede comprar de la red (Grid) para vender al mecado p2p.
-#eq8: Establece que no se puede comprar del mercado p2p para vender a la red (Grid).
-#eq9: Lo que se compra al mercado p2p debe ser igual que lo que se vende.
-#eq10-11: Se aseguran de que los prosumidores solo comercian con un prosumidor.
-
+# --- Definición de las restricciones (tu código original) ---
 def eq1_rule(model,i,t):
     return (M.gE[i,t] + M.GBE[i,t] + M.Edch[i,t] + sum(M.P2BE[i,j,t] for j in M.pro if j != i) -
             M.lE[i,t] - M.GSE[i,t] - M.Ech[i,t] - sum(M.P2SE[i,j,t] for j in M.pro if j != i) ==
@@ -190,34 +146,26 @@ M.eq15 = pyo.Constraint(M.pro, M.ts, rule=eq15_rule)
 
 
 #Resolvemos el modelo
-
 solver = pyo.SolverFactory('glpk')
 result = solver.solve(M)
 
-#print(result.solver.termination_condition)
 if result.solver.status == pyo.SolverStatus.ok:
     if result.solver.termination_condition == pyo.TerminationCondition.optimal:
         print('Se ha llegado a la solución óptima.')
     else:
         print('Se ha llegado a una solución factible.')
-    # Lista para almacenar las filas
+    
+    # --- Creación del DataFrame de resultados (tu código original) ---
     filas = []
-
-# Iterar sobre los períodos y prosumidores
     for t in M.ts:
         for i in M.pro:
-            # Calcular compras y ventas P2P
             compra_p2p = sum(pyo.value(M.P2BE[i,j,t]) for j in M.pro if j != i)
             venta_p2p = sum(pyo.value(M.P2SE[i,j,t]) for j in M.pro if j != i)
-        
-            # Calcular el balance total de energía
             balance_total = (
                 M.gE[i,t] + pyo.value(M.GBE[i,t]) - pyo.value(M.GSE[i,t]) +
                 compra_p2p - venta_p2p +
                 pyo.value(M.Edch[i,t]) - pyo.value(M.Ech[i,t])
                 )
-        
-            # Añadir la fila a la lista
             filas.append({
                 'Ts': t,
                 'Prosumer': i,
@@ -229,17 +177,56 @@ if result.solver.status == pyo.SolverStatus.ok:
                 'P_total': balance_total,
                 'P_demand': M.lE[i,t]
                 })
-
-    # Crear el DataFrame una sola vez
     df_cons = pd.DataFrame(filas)
-
-    # Guardar el DataFrame en un archivo CSV
     archivo_result = "../Results/p1_nobattery.csv"
     if os.path.exists(archivo_result):
         os.remove(archivo_result)
     df_cons.to_csv(archivo_result, index=False)
-
     print(f"Los resultados se han guardado en {archivo_result}.")
+
+    # -----------------------------------------------------------------------------------
+    # --- INICIO DE LA MODIFICACIÓN: CÁLCULO Y GRÁFICA DE ENERGÍA TOTAL P2P ---
+    # -----------------------------------------------------------------------------------
+
+    # 1. Calcular la energía total comerciada en el mercado P2P para cada intervalo
+    total_p2p_traded_per_ts = []
+    for t in M.ts:
+        # Sumamos toda la energía vendida (P2SE) en el mercado P2P en el tiempo t.
+        # Podríamos usar P2BE y el resultado sería el mismo gracias a tu restricción eq9.
+        total_in_t = sum(pyo.value(M.P2SE[i, j, t]) for i, j in M.tran)
+        total_p2p_traded_per_ts.append(total_in_t)
+
+    # Imprimir los valores para verificación
+    print("\nEnergía total comerciada en el mercado P2P por intervalo de tiempo:")
+    for t, energy in zip(M.ts, total_p2p_traded_per_ts):
+        print(f"  Intervalo {t}: {energy:.2f} kWh")
+
+    # 2. Generar la gráfica con Matplotlib
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Crear el gráfico de LÍNEA en lugar de barras
+    # Se añade un marcador 'o' para señalar claramente los puntos de datos
+    ax.plot(list(M.ts), total_p2p_traded_per_ts, 
+            color="#0B21E9", 
+            marker='o', 
+            linestyle='-', 
+            linewidth=2, 
+            markersize=8,
+            label='Energía P2P Comerciada')
+
+    # Añadir títulos y etiquetas para que sea claro
+    ax.set_title('Energía Total Comerciada en el Mercado P2P', fontsize=16, weight='bold')
+    ax.set_xlabel('Intervalo de Tiempo (ts)', fontsize=12)
+    ax.set_ylabel('Energía Total Comerciada (kWh)', fontsize=12)
+    ax.grid(True, linestyle='--', alpha=0.7)
+    ax.set_xticks(list(M.ts)) # Asegura que todos los intervalos se muestren en el eje X
+    ax.legend()
+    ax.set_facecolor("#FFFFFFCA")
+
+    # Mostrar el gráfico
+    plt.tight_layout()
+    plt.show()
+
 
 else:
     print('No se ha encontrado solución.')
