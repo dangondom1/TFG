@@ -25,6 +25,12 @@ M = pyo.ConcreteModel()
 #GBP -> Precio de compra a la red (grid), en EUR/kWh. Grid Buy Price.
 #GSP -> Precio de venta a la red (grid), en EUR/kWh. Se asume mayor al GBP. Grid Sell Price.
 #P2P -> Precio de compra/venta al mercado P2P, en EUR/kWh. Se toma la media entre el GSP y el GBP.
+#MaxE -> Máxima energía transportada.
+#MaxEbat -> Energía máxima presente en las baterías.
+#MaxEch -> Energía máxima cargada por una batería.
+#MaxEdch -> Energía máxima descargada por una batería.
+#batcheff -> Eficiencia de carga de las baterías.
+#batdcheff -> Eficiencia de descarga de las baterías.
 
 M.pro = pyo.RangeSet(1,5)
 M.tran = pyo.Set(dimen=2, initialize =
@@ -53,6 +59,11 @@ M.P2P = pyo.Param(M.ts, initialize = lambda
                model, t:((M.GBP[t]+M.GSP)/2),
                within = pyo.PositiveReals)
 M.maxE = pyo.Param(initialize=10.0)
+M.maxEbat = pyo.Param(initialize=10.0)
+M.maxEch = pyo.Param(initialize=8.0)
+M.maxEdch = pyo.Param(initialize=8.0)
+M.batcheff = pyo.Param(initialize=0.9)
+M.batdcheff = pyo.Param(initialize=0.9)
 
 #Definición de variables
 #GBE -> Energía comprada a la red (grid), en kWh. Grid Buyed Energy.
@@ -63,6 +74,11 @@ M.maxE = pyo.Param(initialize=10.0)
 #GB -> Variable binaria que determina si se vende a la red (Grid).
 #PB -> Variable binaria que determina si se compra al mercado P2P. 
 #PS -> Variable binaria que determina si se vende al mercado P2P. 
+#Ebat -> Energía presente en las baterías.
+#Ech -> Energía cargada en las baterías.
+#Edch -> Energía descargada en las baterías.
+#Bch -> Variable binaria para decidir si una batería se carga.
+#Bdch -> Variable binaria para decidir si una batería se descarga.
 
 M.GBE = pyo.Var(M.pro, M.ts, domain=pyo.PositiveReals, bounds=(0.0,M.maxE))
 M.GSE = pyo.Var(M.pro, M.ts, domain=pyo.PositiveReals, bounds=(0.0,M.maxE))
@@ -72,6 +88,11 @@ M.GB = pyo.Var(M.pro, M.ts, domain=pyo.Binary)
 M.GS = pyo.Var(M.pro, M.ts, domain=pyo.Binary)
 M.PB = pyo.Var(M.tran, M.ts, domain=pyo.Binary)
 M.PS = pyo.Var(M.tran, M.ts, domain=pyo.Binary)
+M.Ebat = pyo.Var(M.pro, M.ts, domain=pyo.PositiveReals, bounds=(0.0,M.maxEbat))
+M.Ech = pyo.Var(M.pro, M.ts, domain=pyo.PositiveReals, bounds=(0.0,M.maxE))
+M.Edch = pyo.Var(M.pro, M.ts, domain=pyo.PositiveReals, bounds=(0.0,M.maxE))
+M.Bch = pyo.Var(M.pro, M.ts, domain=pyo.Binary)
+M.Bdch = pyo.Var(M.pro, M.ts, domain=pyo.Binary)
 
 #Definición de la función objetivo.
 
@@ -93,8 +114,8 @@ M.Z = pyo.Objective(
 #eq10-11: Se aseguran de que los prosumidores solo comercian con un prosumidor.
 
 def eq1_rule(model,i,t):
-    return (M.gE[i,t] + M.GBE[i,t] + sum(M.P2BE[i,j,t] for j in M.pro if j != i) -
-            M.lE[i,t] - M.GSE[i,t] - sum(M.P2SE[i,j,t] for j in M.pro if j != i) ==
+    return (M.gE[i,t] + M.GBE[i,t] + M.Edch[i,t] + sum(M.P2BE[i,j,t] for j in M.pro if j != i) -
+            M.lE[i,t] - M.GSE[i,t] - M.Ech[i,t] - sum(M.P2SE[i,j,t] for j in M.pro if j != i) ==
             0.0)
 M.eq1 = pyo.Constraint(M.pro, M.ts, rule=eq1_rule)
 
@@ -148,6 +169,26 @@ def eq11_rule(model,j,t):
            0.0)
 M.eq11 = pyo.Constraint(M.pro, M.ts, rule=eq11_rule)
 
+def eq12_rule(model,i,t):
+    if t == M.ts.first():
+        return(M.Ebat[i,t] == M.maxEbat*0.8)
+    else:
+        return(M.Ebat[i,t] - M.Ebat[i,t-1] - M.Ech[i,t]*M.batcheff + M.Edch[i,t]*1/M.batdcheff == 0.0)
+M.eq12 = pyo.Constraint(M.pro, M.ts, rule=eq12_rule)
+
+def eq13_rule(model,i,t):
+    return(M.Bch[i,t] + M.Bdch[i,t] <= 1)
+M.eq13 = pyo.Constraint(M.pro, M.ts, rule=eq13_rule)
+
+def eq14_rule(model,i,t):
+    return(M.Ech[i,t] - M.maxEch*M.Bch[i,t] <= 0.0)
+M.eq14 = pyo.Constraint(M.pro, M.ts, rule=eq14_rule)
+
+def eq15_rule(model,i,t):
+    return(M.Edch[i,t] - M.maxEdch*M.Bdch[i,t] <= 0.0)
+M.eq15 = pyo.Constraint(M.pro, M.ts, rule=eq15_rule)
+
+
 #Resolvemos el modelo
 
 solver = pyo.SolverFactory('glpk')
@@ -172,7 +213,8 @@ if result.solver.status == pyo.SolverStatus.ok:
             # Calcular el balance total de energía
             balance_total = (
                 M.gE[i,t] + pyo.value(M.GBE[i,t]) - pyo.value(M.GSE[i,t]) +
-                compra_p2p - venta_p2p
+                compra_p2p - venta_p2p +
+                pyo.value(M.Edch[i,t]) - pyo.value(M.Ech[i,t])
                 )
         
             # Añadir la fila a la lista
