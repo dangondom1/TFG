@@ -29,10 +29,10 @@ M = pyo.ConcreteModel()
 #MaxEdch -> Energía máxima descargada por una batería.
 #batcheff -> Eficiencia de carga de las baterías.
 #batdcheff -> Eficiencia de descarga de las baterías.
-M.pro = pyo.RangeSet(1,5)
+M.pro = pyo.RangeSet(1,10)
 M.tran = pyo.Set(dimen=2, initialize =
                  [(i,j) for i in M.pro for j in M.pro if i!=j])
-M.ts = pyo.RangeSet(1,4)
+M.ts = pyo.RangeSet(1,96)
 M.dt = pyo.Param(initialize=(15/60))
 
 df_gE = pd.read_csv("../Data/Gen_pw.csv", sep=',').to_numpy()
@@ -45,16 +45,16 @@ M.lE = pyo.Param(M.pro, M.ts, initialize = lambda
              model, i, t: df_lE[t-1,i-1]*M.dt,
              within = pyo.NonNegativeReals)
 
-df_GBP = pd.read_csv("../Data/precio_compra_red.csv", sep=',').to_numpy()
+df_GBP = pd.read_csv("../Data/buy_price.csv", sep=',').to_numpy()
 
 M.GBP = pyo.Param(M.ts, initialize = lambda
               model, t: df_GBP[t-1],
-              within = pyo.PositiveReals)
+              within = pyo.Reals)
 M.GSP = pyo.Param(initialize=0.07,
-                  within = pyo.PositiveReals)
+                  within = pyo.Reals)
 M.P2P = pyo.Param(M.ts, initialize = lambda
                model, t:((M.GBP[t]+M.GSP)/2),
-               within = pyo.PositiveReals)
+               within = pyo.Reals)
 M.maxE = pyo.Param(initialize=10.0)
 M.maxEbat = pyo.Param(initialize=10.0)
 M.maxEch = pyo.Param(initialize=8.0)
@@ -185,7 +185,8 @@ M.eq15 = pyo.Constraint(M.pro, M.ts, rule=eq15_rule)
 
 #Resolvemos el modelo
 solver = pyo.SolverFactory('glpk')
-solver.options['mipgap'] = 1e-5
+solver.options['mipgap'] = 1e-3
+solver.options['tmlim'] = 86400 #1 día
 result = solver.solve(M, tee=True)
 
 if result.solver.status == pyo.SolverStatus.ok:
