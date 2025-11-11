@@ -12,10 +12,11 @@ os.chdir(BASE_DIR)
 
 # --- CREACIÓN DEL MODELO ---
 M = pyo.ConcreteModel()
-
+ 
 # --- CREACIÓN DE SETS ---
-N_prosumers = 3
-N_ts = 5
+N_prosumers = int(3)
+N_ts = int(5)
+test = 1
 
 # --- LECTURA Y DEFINICIÓN DE PARÁMETROS ---
 # Datos de ejemplo para que el modelo sea ejecutable
@@ -25,9 +26,11 @@ dt = 15 / 60
 # Se asume que los archivos de datos están en un directorio llamado 'Data' en el nivel superior.
 # Si la estructura es diferente, ajusta las rutas.
 try:
-    df_generated_energy = pd.read_csv("../Data/Gen_pw_test.csv", sep=',').to_numpy()
-    df_load_energy = pd.read_csv("../Data/Con_pw_test.csv", sep=',').to_numpy()
-    df_grid_buy_price = pd.read_csv("../Data/buy_price.csv", sep=',').to_numpy()
+    df_generated_energy = pd.read_csv(f"./Data/Prueba_{test}/Gen_pw.csv", sep=',').to_numpy()
+    df_load_energy = pd.read_csv(f"./Data/Prueba_{test}/Cons_pw.csv", sep=',').to_numpy()
+    df_grid_buy_price = pd.read_csv("./Data/buy_price.csv", sep=',').to_numpy()
+    has_bat = np.random.choice([0, 1], size=N_prosumers, p=[0.5, 0.5])
+    battery_cap = np.random.choice([5, 10, 15, 20], size=N_prosumers, p=[0.25, 0.25, 0.25, 0.25])
 except FileNotFoundError:
     print("Advertencia: No se encontraron los archivos de datos. Usando datos aleatorios para la ejecución.")
     df_generated_energy = np.random.rand(N_ts, N_prosumers) * 5
@@ -72,7 +75,7 @@ M.P_buyGrid = pyo.Var(M.Nt, M.Ni, bounds=(0.0, M.P_max_buyGrid))
 M.P_sellGrid = pyo.Var(M.Nt, M.Ni, bounds=(0.0, M.P_max_sellGrid))
 M.P_buy_p2p = pyo.Var(M.Nt, M.p2p_pairs, bounds=(0.0, M.P_max_buy_p2p))
 M.P_sell_p2p = pyo.Var(M.Nt, M.p2p_pairs, bounds=(0.0, M.P_max_sell_p2p))
-M.E_bat = pyo.Var(M.Nt, M.Ni, bounds=(0.2*M.E_max_Bat, 0.8*M.E_max_Bat))
+M.E_bat = pyo.Var(M.Nt, M.Ni)
 M.P_ch = pyo.Var(M.Nt, M.Ni, bounds=(0.0, M.P_max_ch))
 M.P_dch = pyo.Var(M.Nt, M.Ni, bounds=(0.0, M.P_max_dch))
 
@@ -164,7 +167,7 @@ M.p2p_no_simultaneous_buy_sell = pyo.Constraint(M.Nt, M.Ni, rule=p2p_no_simultan
 
 def battery_model_rule(model, t, i):
     if t == model.Nt.first():
-        return model.E_bat[t, i] == 0.2*model.E_max_Bat + (model.P_ch[t, i] * model.n_ch - model.P_dch[t, i] / model.n_dch)
+        return model.E_bat[t, i] == 0.5*(battery_cap[i] * has_bat[i]) + (model.P_ch[t, i] * model.n_ch - model.P_dch[t, i] / model.n_dch)
     else:
         return model.E_bat[t, i] == model.E_bat[t - 1, i] + (model.P_ch[t, i] * model.n_ch - model.P_dch[t, i] / model.n_dch)
 M.battery_model = pyo.Constraint(M.Nt, M.Ni, rule=battery_model_rule)
@@ -181,6 +184,14 @@ def battery_charge_discharge_rule(model, t, i):
     return model.B_ch[t, i] + model.B_dch[t, i] <= 1
 M.battery_charge_discharge = pyo.Constraint(M.Nt, M.Ni, rule=battery_charge_discharge_rule)
 
+def battery_capacity_up_rule(model, t, i):
+    return model.E_bat[t, i] <= 0.8 * battery_cap[i] * has_bat[i]
+M.battery_up_capacity = pyo.Constraint(M.Nt, M.Ni, rule=battery_capacity_up_rule)
+
+def battery_capacity_low_rule(model, t, i):
+    return model.E_bat[t, i] >= 0.2 * battery_cap[i] * has_bat[i]
+M.battery_low_capacity = pyo.Constraint(M.Nt, M.Ni, rule=battery_capacity_low_rule)
+
 solver = pyo.SolverFactory('gurobi')
 #solver.options['MIPgap'] = 0.0
 #solver.options['tmlim'] = 7200 #2 horas
@@ -191,8 +202,7 @@ if result.solver.termination_condition == pyo.TerminationCondition.optimal:
     print(f"Objective value: {pyo.value(M.obj)}")
 
     # --- EXPORTAR RESULTADOS A CSV ---
-    results_dir = BASE_DIR / "Results"
-    results_dir.mkdir(exist_ok=True)
+    results_dir = "./Results"
 
     # Timeseries por prosumer (grid, batería, generación, carga)
     rows = []
@@ -201,18 +211,20 @@ if result.solver.termination_condition == pyo.TerminationCondition.optimal:
             rows.append({
                 "t": int(t),
                 "prosumer": int(i),
-                "P_buyGrid": float(pyo.value(M.P_buyGrid[t, i])),
-                "P_sellGrid": float(pyo.value(M.P_sellGrid[t, i])),
-                "P_sellP2P": float(sum(pyo.value(M.P_sell_p2p[t, (i, j)]) for j in M.Ni if j != i)),
-                "P_buyP2P": float(sum(pyo.value(M.P_buy_p2p[t, (i, j)]) for j in M.Ni if j != i)),
-                "P_ch": float(pyo.value(M.P_ch[t, i])),
-                "P_dch": float(pyo.value(M.P_dch[t, i])),
-                "E_bat": float(pyo.value(M.E_bat[t, i])),
-                "P_gen": float(pyo.value(M.P_gen[t, i])),
-                "P_load": float(pyo.value(M.P_load[t, i]))
+                "P_buyGrid": np.round(float(pyo.value(M.P_buyGrid[t, i])), 2),
+                "P_sellGrid": np.round(float(pyo.value(M.P_sellGrid[t, i])), 2),
+                "P_sellP2P": np.round(float(sum(pyo.value(M.P_sell_p2p[t, (i, j)]) for j in M.Ni if j != i)), 2),
+                "P_buyP2P": np.round(float(sum(pyo.value(M.P_buy_p2p[t, (i, j)]) for j in M.Ni if j != i)), 2),
+                "P_ch": np.round(float(pyo.value(M.P_ch[t, i])), 2),
+                "P_dch": np.round(float(pyo.value(M.P_dch[t, i])), 2),
+                "E_bat": np.round(float(pyo.value(M.E_bat[t, i])), 2),
+                "P_gen": np.round(float(pyo.value(M.P_gen[t, i])), 2),
+                "P_load": np.round(float(pyo.value(M.P_load[t, i])), 2),
+                "Bat_cap": np.round(float(pyo.value(M.E_bat[t, i])), 2),
+                "Bat_cap_max": np.round(battery_cap[i] * has_bat[i], 2)
             })
     df_all = pd.DataFrame(rows)
-    df_all.to_csv(results_dir / "results_all.csv", index=False)
+    df_all.to_csv("./Results/Prueba_{}/results_all.csv".format(test), index=False)
 
     # Desglose P2P: buyer (i) compra a seller (j) la potencia indicada
     p2p_rows = []
@@ -230,10 +242,10 @@ if result.solver.termination_condition == pyo.TerminationCondition.optimal:
                     "t": int(t),
                     "buyer": int(i),
                     "seller": int(j),
-                    "power": val
+                    "power": round(val, 2)
                 })
     df_p2p = pd.DataFrame(p2p_rows)
-    df_p2p.to_csv(results_dir / "results_p2p.csv", index=False)
+    df_p2p.to_csv("./Results/Prueba_{}/results_p2p.csv".format(test), index=False)
 
     print(f"Results exported to {results_dir}")
 else:
