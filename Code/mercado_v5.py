@@ -16,7 +16,8 @@ M = pyo.ConcreteModel()
 # --- CREACIÓN DE SETS ---
 N_prosumers = int(3)
 N_ts = int(5)
-test = 1
+initial_ch = 0.2
+test = 3
 
 # --- LECTURA Y DEFINICIÓN DE PARÁMETROS ---
 # Datos de ejemplo para que el modelo sea ejecutable
@@ -167,7 +168,7 @@ M.p2p_no_simultaneous_buy_sell = pyo.Constraint(M.Nt, M.Ni, rule=p2p_no_simultan
 
 def battery_model_rule(model, t, i):
     if t == model.Nt.first():
-        return model.E_bat[t, i] == 0.5*(battery_cap[i] * has_bat[i]) + (model.P_ch[t, i] * model.n_ch - model.P_dch[t, i] / model.n_dch)
+        return model.E_bat[t, i] == initial_ch*(battery_cap[i] * has_bat[i]) + (model.P_ch[t, i] * model.n_ch - model.P_dch[t, i] / model.n_dch)
     else:
         return model.E_bat[t, i] == model.E_bat[t - 1, i] + (model.P_ch[t, i] * model.n_ch - model.P_dch[t, i] / model.n_dch)
 M.battery_model = pyo.Constraint(M.Nt, M.Ni, rule=battery_model_rule)
@@ -217,10 +218,9 @@ if result.solver.termination_condition == pyo.TerminationCondition.optimal:
                 "P_buyP2P": np.round(float(sum(pyo.value(M.P_buy_p2p[t, (i, j)]) for j in M.Ni if j != i)), 2),
                 "P_ch": np.round(float(pyo.value(M.P_ch[t, i])), 2),
                 "P_dch": np.round(float(pyo.value(M.P_dch[t, i])), 2),
-                "E_bat": np.round(float(pyo.value(M.E_bat[t, i])), 2),
                 "P_gen": np.round(float(pyo.value(M.P_gen[t, i])), 2),
                 "P_load": np.round(float(pyo.value(M.P_load[t, i])), 2),
-                "Bat_cap": np.round(float(pyo.value(M.E_bat[t, i])), 2),
+                "E_bat": np.round(float(pyo.value(M.E_bat[t, i])), 2),
                 "Bat_cap_max": np.round(battery_cap[i] * has_bat[i], 2)
             })
     df_all = pd.DataFrame(rows)
